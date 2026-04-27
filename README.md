@@ -12,12 +12,12 @@ In Xcode → **File ▸ Add Packages…**:
 https://github.com/BitCodeHub/luniq-sdk-ios.git
 ```
 
-Pin to `1.0.2` (or "Up to Next Major Version").
+Pin to `1.0.3` (or "Up to Next Major Version").
 
 ### CocoaPods
 
 ```ruby
-pod 'LuniqSDK', :git => 'https://github.com/BitCodeHub/luniq-sdk-ios.git', :tag => '1.0.2'
+pod 'LuniqSDK', :git => 'https://github.com/BitCodeHub/luniq-sdk-ios.git', :tag => '1.0.3'
 ```
 
 ## Quick start

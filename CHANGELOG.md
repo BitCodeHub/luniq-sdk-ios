@@ -3,6 +3,17 @@
 All notable changes to `LuniqSDK` for iOS are documented in this file.
 The project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.0.3] — 2026-04-27
+
+### Fixed
+- **CocoaPods install was broken in 1.0.0–1.0.2**: the podspec still
+  declared a `LuniqObjC` subspec pointing at `Sources/LuniqObjC/**/*.{h,m}`
+  — files that no longer exist after the 1.0.1 Swift-bridge refactor.
+  Pod install would fail to find sources. Podspec is now a single
+  Swift-only spec; the Obj-C facade is part of the main module.
+- Podspec `s.source` now points at the public GitHub URL with a tag
+  reference, so `pod 'LuniqSDK'` works without needing a local checkout.
+
 ## [1.0.2] — 2026-04-27
 
 ### Added
