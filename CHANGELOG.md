@@ -3,6 +3,18 @@
 All notable changes to `LuniqSDK` for iOS are documented in this file.
 The project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.0.2] — 2026-04-27
+
+### Added
+- `HTTPTransport.extraProtocolClasses` — test hook so `URLProtocol` mocks
+  flow through the SDK's URLSession even though `Luniq.shared` is a
+  singleton. Production code never touches it; tests set it in setUp().
+
+### Changed
+- iOS test suite now runs 15/15 with no skips on `xcodebuild test`. The
+  five EndToEnd / Transport tests that were skipped in 1.0.1 (waiting on
+  URLSession injection) are live again.
+
 ## [1.0.1] — 2026-04-27
 
 ### Fixed

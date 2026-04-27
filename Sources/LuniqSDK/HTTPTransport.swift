@@ -4,9 +4,17 @@ final class HTTPTransport {
     private let config: LuniqConfig
     private let session: URLSession
 
+    /// Test hook. Classes here are prepended to every new transport's
+    /// `protocolClasses`. Set this from test setUp() *before* calling
+    /// `Luniq.shared.start(...)` so the resulting URLSession routes
+    /// through your `URLProtocol` mock instead of the real network.
+    /// Production code never touches this.
+    static var extraProtocolClasses: [AnyClass] = []
+
     init(config: LuniqConfig) {
         self.config = config
         let sc = URLSessionConfiguration.default
+        sc.protocolClasses = HTTPTransport.extraProtocolClasses + (sc.protocolClasses ?? [])
         sc.timeoutIntervalForRequest = 15
         sc.timeoutIntervalForResource = 30
         self.session = URLSession(configuration: sc)
