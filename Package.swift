@@ -6,18 +6,15 @@ let package = Package(
     platforms: [.iOS(.v13)],
     products: [
         .library(name: "LuniqSDK", targets: ["LuniqSDK"]),
-        .library(name: "LuniqObjC", targets: ["LuniqObjC"]),
     ],
     targets: [
         .target(
             name: "LuniqSDK",
-            path: "Sources/LuniqSDK"
-        ),
-        .target(
-            name: "LuniqObjC",
-            dependencies: ["LuniqSDK"],
-            path: "Sources/LuniqObjC",
-            publicHeadersPath: "include"
+            path: "Sources/LuniqSDK",
+            linkerSettings: [
+                .linkedFramework("UIKit"),
+                .linkedFramework("Foundation"),
+            ]
         ),
         .testTarget(
             name: "LuniqSDKTests",

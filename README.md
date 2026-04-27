@@ -12,12 +12,12 @@ In Xcode → **File ▸ Add Packages…**:
 https://github.com/BitCodeHub/luniq-sdk-ios.git
 ```
 
-Pin to `1.0.0` (or "Up to Next Major Version").
+Pin to `1.0.1` (or "Up to Next Major Version").
 
 ### CocoaPods
 
 ```ruby
-pod 'LuniqSDK', :git => 'https://github.com/BitCodeHub/luniq-sdk-ios.git', :tag => '1.0.0'
+pod 'LuniqSDK', :git => 'https://github.com/BitCodeHub/luniq-sdk-ios.git', :tag => '1.0.1'
 ```
 
 ## Quick start
@@ -46,13 +46,25 @@ Luniq.shared.reportError(error, context: ["feature": "checkout"])
 
 ## Objective-C
 
+The Swift `Luniq` class is exposed to Obj-C via `@objc`. For ergonomic
+class-method syntax, use the `LuniqObjC` facade — both are part of the
+`LuniqSDK` module (no separate import needed):
+
 ```objc
-#import <LuniqObjC/LuniqObjC.h>
+@import LuniqSDK;
 
 [LuniqObjC startWithApiKey:@"lq_live_xxx"
                   endpoint:@"https://uselunaai.com"
                environment:@"PRD"];
 [LuniqObjC trackEvent:@"checkout_started" properties:@{@"cart_size": @3}];
+```
+
+Or call the singleton directly:
+
+```objc
+[[Luniq shared] startWithApiKey:@"lq_live_xxx"
+                       endpoint:@"https://uselunaai.com"
+                    environment:@"PRD"];
 ```
 
 ## Auto-capture (on by default)

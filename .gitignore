@@ -1,6 +1,11 @@
 .DS_Store
 .build/
-.swiftpm/
+.swiftpm/*
+!.swiftpm/xcode
+.swiftpm/xcode/*
+!.swiftpm/xcode/xcshareddata
+.swiftpm/xcode/xcshareddata/*
+!.swiftpm/xcode/xcshareddata/xcschemes
 DerivedData/
 *.xcodeproj
 xcuserdata/
