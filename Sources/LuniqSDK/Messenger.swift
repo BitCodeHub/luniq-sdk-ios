@@ -126,6 +126,11 @@ final class MessengerViewController: UIViewController, UITextViewDelegate {
     required init?(coder: NSCoder) { fatalError() }
 
     private var sendBarButton: UIBarButtonItem!
+    /// The composer's bottom-anchor constraint, pulled out so we can adjust
+    /// its constant when the keyboard appears/disappears (manual keyboard
+    /// avoidance — `view.keyboardLayoutGuide` causes layout cycles inside a
+    /// page-sheet container on iPhone 16, so we observe notifications instead).
+    private var composerBottomConstraint: NSLayoutConstraint!
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -158,8 +163,10 @@ final class MessengerViewController: UIViewController, UITextViewDelegate {
         stack.translatesAutoresizingMaskIntoConstraints = false
         scroll.addSubview(stack)
 
-        // Greeting bubble (AI introduces itself)
+        // Greeting bubble (AI introduces itself). Replaced by the actual
+        // conversation history if `loadHistory()` finds any below.
         addAIBubble("Hi! What can we help with? Describe the issue, suggestion, or question — we'll reply right away.")
+        loadHistory()
 
         // Composer pinned to bottom
         let composerWrap = UIView()
@@ -177,6 +184,14 @@ final class MessengerViewController: UIViewController, UITextViewDelegate {
         composer.layer.cornerRadius = 10
         composer.delegate = self
         composer.translatesAutoresizingMaskIntoConstraints = false
+        // Let intrinsic content size drive height so the input grows with the
+        // user's typing instead of greedily filling all available vertical
+        // space. Without this, UITextView (no inherent height limit) ate the
+        // entire sheet and the chat scroll view collapsed to 0pt — which is
+        // why the conversation thread was invisible.
+        composer.isScrollEnabled = false
+        composer.setContentHuggingPriority(.defaultHigh, for: .vertical)
+        composer.setContentCompressionResistancePriority(.required, for: .vertical)
         composerWrap.addSubview(composer)
 
         sendButton.setTitle("Send", for: .normal)
@@ -193,6 +208,19 @@ final class MessengerViewController: UIViewController, UITextViewDelegate {
         sendingSpinner.hidesWhenStopped = true
         composerWrap.addSubview(sendingSpinner)
 
+        // Place [composer | sendButton] in a horizontal stack so they stay
+        // aligned regardless of how tall the textview grows. Bottom-aligned
+        // so the send button hugs the last text line rather than floating.
+        let inputRow = UIStackView(arrangedSubviews: [composer, sendButton])
+        inputRow.axis = .horizontal
+        inputRow.alignment = .bottom
+        inputRow.spacing = 8
+        inputRow.translatesAutoresizingMaskIntoConstraints = false
+        composerWrap.addSubview(inputRow)
+        // Send button must not be compressed when textview grows.
+        sendButton.setContentHuggingPriority(.required, for: .horizontal)
+        sendButton.setContentCompressionResistancePriority(.required, for: .horizontal)
+
         NSLayoutConstraint.activate([
             scroll.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
             scroll.leadingAnchor.constraint(equalTo: view.leadingAnchor),
@@ -207,26 +235,62 @@ final class MessengerViewController: UIViewController, UITextViewDelegate {
 
             composerWrap.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             composerWrap.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            // Pin to safe-area bottom; the page-sheet container handles
-            // keyboard avoidance for us. keyboardLayoutGuide caused layout
-            // cycles inside the sheet → crash on iPhone 16.
-            composerWrap.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
 
             kindControl.topAnchor.constraint(equalTo: composerWrap.topAnchor, constant: 10),
             kindControl.leadingAnchor.constraint(equalTo: composerWrap.leadingAnchor, constant: 12),
             kindControl.trailingAnchor.constraint(equalTo: composerWrap.trailingAnchor, constant: -12),
 
-            composer.topAnchor.constraint(equalTo: kindControl.bottomAnchor, constant: 8),
-            composer.leadingAnchor.constraint(equalTo: composerWrap.leadingAnchor, constant: 12),
-            composer.trailingAnchor.constraint(equalTo: sendButton.leadingAnchor, constant: -8),
-            composer.bottomAnchor.constraint(equalTo: composerWrap.bottomAnchor, constant: -10),
-            composer.heightAnchor.constraint(greaterThanOrEqualToConstant: 44),
+            inputRow.topAnchor.constraint(equalTo: kindControl.bottomAnchor, constant: 8),
+            inputRow.leadingAnchor.constraint(equalTo: composerWrap.leadingAnchor, constant: 12),
+            inputRow.trailingAnchor.constraint(equalTo: composerWrap.trailingAnchor, constant: -12),
+            inputRow.bottomAnchor.constraint(equalTo: composerWrap.bottomAnchor, constant: -10),
 
-            sendButton.trailingAnchor.constraint(equalTo: composerWrap.trailingAnchor, constant: -12),
-            sendButton.bottomAnchor.constraint(equalTo: composerWrap.bottomAnchor, constant: -14),
+            composer.heightAnchor.constraint(greaterThanOrEqualToConstant: 44),
+            // Cap composer growth — past this point the textview scrolls
+            // internally instead of pushing the chat thread off-screen.
+            composer.heightAnchor.constraint(lessThanOrEqualToConstant: 120),
+
             sendingSpinner.centerXAnchor.constraint(equalTo: sendButton.centerXAnchor),
             sendingSpinner.centerYAnchor.constraint(equalTo: sendButton.centerYAnchor),
         ])
+
+        // Keyboard-avoidance: hold a reference to the composer's bottom anchor
+        // and slide it up when the keyboard appears so the kindControl +
+        // textfield aren't covered. Observed via NotificationCenter rather
+        // than keyboardLayoutGuide to avoid the iPhone 16 page-sheet crash.
+        composerBottomConstraint = composerWrap.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor)
+        composerBottomConstraint.isActive = true
+
+        let nc = NotificationCenter.default
+        nc.addObserver(self, selector: #selector(keyboardWillChange(_:)),
+                       name: UIResponder.keyboardWillShowNotification, object: nil)
+        nc.addObserver(self, selector: #selector(keyboardWillChange(_:)),
+                       name: UIResponder.keyboardWillChangeFrameNotification, object: nil)
+        nc.addObserver(self, selector: #selector(keyboardWillHide(_:)),
+                       name: UIResponder.keyboardWillHideNotification, object: nil)
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+
+    @objc private func keyboardWillChange(_ note: NSNotification) {
+        guard
+            let info = note.userInfo,
+            let endFrame = (info[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?.cgRectValue,
+            let duration = info[UIResponder.keyboardAnimationDurationUserInfoKey] as? TimeInterval
+        else { return }
+        let viewInWindow = view.convert(view.bounds, to: nil)
+        let keyboardOverlap = max(0, viewInWindow.maxY - endFrame.origin.y)
+        composerBottomConstraint.constant = -keyboardOverlap
+        UIView.animate(withDuration: duration) { self.view.layoutIfNeeded() }
+        scrollToBottom()
+    }
+
+    @objc private func keyboardWillHide(_ note: NSNotification) {
+        let duration = (note.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? TimeInterval) ?? 0.25
+        composerBottomConstraint.constant = 0
+        UIView.animate(withDuration: duration) { self.view.layoutIfNeeded() }
     }
 
     override func viewDidAppear(_ animated: Bool) {
@@ -240,6 +304,52 @@ final class MessengerViewController: UIViewController, UITextViewDelegate {
     @objc private func close() { dismiss(animated: true) }
 
     @objc private func dismissKeyboard() { view.endEditing(true) }
+
+    /// Fetch the user's recent conversation thread from the backend so opening
+    /// the messenger after a previous session shows the AI's prior replies in
+    /// place — the "I sent something but where did it go?" fix.
+    private func loadHistory() {
+        guard let visitorId = identity.visitorId, !visitorId.isEmpty,
+              var comps = URLComponents(string: "\(config.endpoint)/v1/sdk/messages/history") else {
+            return
+        }
+        comps.queryItems = [
+            URLQueryItem(name: "visitorId", value: visitorId),
+            URLQueryItem(name: "accountId", value: identity.accountId ?? ""),
+            URLQueryItem(name: "limit", value: "20"),
+        ]
+        guard let url = comps.url else { return }
+        var req = URLRequest(url: url)
+        req.setValue(config.apiKey, forHTTPHeaderField: "X-Luniq-Key")
+        URLSession.shared.dataTask(with: req) { [weak self] data, _, _ in
+            guard
+                let self,
+                let data,
+                let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]],
+                !arr.isEmpty
+            else { return }
+            DispatchQueue.main.async {
+                // Replace the static welcome with real history. Clear stack first.
+                for v in self.stack.arrangedSubviews {
+                    self.stack.removeArrangedSubview(v); v.removeFromSuperview()
+                }
+                self.addAIBubble("Welcome back. Here's your recent conversation:")
+                for m in arr {
+                    if let userText = m["userText"] as? String, !userText.isEmpty {
+                        self.addUserBubble(userText)
+                    }
+                    if let reply = m["aiReply"] as? String, !reply.isEmpty {
+                        self.addAIBubble(reply)
+                    }
+                    if let action = m["action"] as? String,
+                       action == "filed_bug",
+                       let jiraKey = m["jiraKey"] as? String, !jiraKey.isEmpty {
+                        self.addAIBubble("📌 Filed as ticket \(jiraKey).")
+                    }
+                }
+            }
+        }.resume()
+    }
 
     @objc private func send() {
         let text = (composer.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -270,19 +380,47 @@ final class MessengerViewController: UIViewController, UITextViewDelegate {
         ]
         req.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
-        URLSession.shared.dataTask(with: req) { [weak self] data, _, _ in
+        URLSession.shared.dataTask(with: req) { [weak self] data, resp, err in
             DispatchQueue.main.async {
                 guard let self else { return }
                 self.sendingSpinner.stopAnimating()
                 self.sendButton.setTitle("Send", for: .normal)
                 self.sendButton.isEnabled = true
                 self.sendBarButton?.isEnabled = true
+
+                let httpStatus = (resp as? HTTPURLResponse)?.statusCode ?? 0
+                let success = err == nil && (200..<300).contains(httpStatus)
+
+                // Network-level failure — tell the user, don't silently lie.
+                if !success {
+                    self.addAIBubble("⚠️ Couldn't reach support right now. Please check your connection and try again.")
+                    return
+                }
+
+                // Backend's canonical field is `reply`; older builds returned
+                // `aiReply`/`ai_reply`. Accept any of them so the chat works
+                // regardless of which version of the API you're hitting.
                 if let data,
                    let j = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                    let reply = (j["aiReply"] as? String) ?? (j["ai_reply"] as? String) ?? ""
-                    self.addAIBubble(reply.isEmpty ? "Thanks — we've logged this." : reply)
+                    let reply = (j["reply"] as? String)
+                        ?? (j["aiReply"] as? String)
+                        ?? (j["ai_reply"] as? String)
+                        ?? ""
+                    let action = (j["action"] as? String) ?? ""
+                    let jiraKey = (j["jiraKey"] as? String) ?? ""
+
+                    if !reply.isEmpty {
+                        self.addAIBubble(reply)
+                    } else {
+                        self.addAIBubble("Thanks — we've logged this and a teammate will follow up.")
+                    }
+                    // If the backend auto-filed this as a bug, surface that
+                    // small confirmation so the user knows it's tracked.
+                    if action == "filed_bug" && !jiraKey.isEmpty {
+                        self.addAIBubble("📌 Filed as ticket \(jiraKey).")
+                    }
                 } else {
-                    self.addAIBubble("We received your message — a teammate will follow up.")
+                    self.addAIBubble("Thanks — we've logged this and a teammate will follow up.")
                 }
             }
         }.resume()

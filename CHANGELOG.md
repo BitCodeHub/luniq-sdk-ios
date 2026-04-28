@@ -3,6 +3,45 @@
 All notable changes to `LuniqSDK` for iOS are documented in this file.
 The project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.0.4] — 2026-04-28
+
+### Fixed
+- **Messenger AI replies invisible**: backend's response field is `reply`,
+  but the SDK was reading `aiReply` first → AI text never displayed,
+  the chat fell back to a static "Thanks — we've logged this" string.
+  Parser now accepts `reply`, `aiReply`, and `ai_reply`. The backend
+  was also updated to return all three field names (1.0.x SDKs already
+  in the wild work without an upgrade).
+- **Messenger composer ate the entire sheet**: UITextView with no max
+  height grew to fill all vertical space, collapsing the chat scroll
+  view to 0pt — that's why the conversation thread was invisible.
+  Added `isScrollEnabled = false` + `>= 44 / <= 120` height bounds and
+  set high vertical content-hugging priority.
+- **Send button got pushed off-screen as text grew**: composer + send
+  button live in a horizontal `UIStackView` (bottom-aligned) now;
+  send button has required content-hugging + compression-resistance,
+  so growing text never displaces it.
+- **Keyboard covered the input + tabs**: manual keyboard avoidance via
+  `UIResponder.keyboardWillChangeFrameNotification` (using
+  `keyboardLayoutGuide` causes layout cycles inside a page-sheet on
+  iPhone 16). Composer slides up exactly the keyboard's overlap height.
+- **Duplicate `show_feedback` modals on rapid event bursts**:
+  `DecisionAgent` now sets the post-call cooldown when sending the
+  `/v1/sdk/decide` request (not when receiving), and an `inFlight`
+  guard prevents concurrent decision calls. Without this, two bursts
+  of 8 events in <1 s could each fire a decision call, both returning
+  `show_feedback` before either set the cooldown.
+
+### Added
+- **Messenger conversation history**: opens with the user's prior
+  thread populated from `GET /v1/sdk/messages/history`. "Welcome
+  back. Here's your recent conversation:" header replaces the
+  one-shot greeting after fetch.
+- **Sent-status indicators**: AI replies that auto-filed Jira tickets
+  now surface a `📌 Filed as ticket <KEY>` confirmation bubble.
+  Network-level failures show a clear retry hint instead of the
+  silent "logged this" placeholder.
+
 ## [1.0.3] — 2026-04-27
 
 ### Fixed
