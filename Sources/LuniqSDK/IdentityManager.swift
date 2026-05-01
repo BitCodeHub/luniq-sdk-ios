@@ -7,9 +7,9 @@ final class IdentityManager {
     private(set) var traits: [String: Any] = [:]
 
     private let defaults = UserDefaults(suiteName: "ai.luniq.sdk") ?? .standard
-    private let kVisitor = "pulse.visitor_id"
-    private let kAccount = "pulse.account_id"
-    private let kTraits  = "pulse.traits"
+    private let kVisitor = "luniq.visitor_id"
+    private let kAccount = "luniq.account_id"
+    private let kTraits  = "luniq.traits"
 
     init() {
         visitorId = defaults.string(forKey: kVisitor)
@@ -26,11 +26,8 @@ final class IdentityManager {
         defaults.set(self.traits, forKey: kTraits)
     }
 
-    /// SHA-256 hash any sensitive identifier (VIN, SSN, account number, etc.)
-    /// before sending it as a property. Pass a stable per-app `pepper` so hashes
-    /// are not portable across products.
-    static func hashIdentifier(_ value: String, pepper: String = "pulse-v1") -> String {
-        let input = (value + pepper).data(using: .utf8) ?? Data()
+    static func hashIdentifier(_ vin: String, pepper: String = "luniq-v1") -> String {
+        let input = (vin + pepper).data(using: .utf8) ?? Data()
         var digest = [UInt8](repeating: 0, count: Int(CC_SHA256_DIGEST_LENGTH))
         input.withUnsafeBytes { _ = CC_SHA256($0.baseAddress, CC_LONG(input.count), &digest) }
         return digest.map { String(format: "%02x", $0) }.joined()

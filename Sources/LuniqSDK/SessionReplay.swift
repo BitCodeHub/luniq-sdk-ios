@@ -191,6 +191,16 @@ final class SessionReplay {
 
     private func finalise(writer: AVAssetWriter?, url: URL?, index: Int, completion: (() -> Void)?) {
         guard let writer, let url else { completion?(); return }
+        // markAsFinished + finishWriting both require the writer to be in
+        // .writing. If the segment was created but never started (no frames
+        // arrived before stop, e.g. a sub-second app launch), status is
+        // .unknown and calling markAsFinished raises
+        // NSInternalInconsistencyException, killing the whole app.
+        guard writer.status == .writing else {
+            try? FileManager.default.removeItem(at: url)
+            completion?()
+            return
+        }
         writer.inputs.forEach { $0.markAsFinished() }
         writer.finishWriting { [weak self] in
             // Wait for the upload before reporting completion so the caller

@@ -27,6 +27,7 @@ extension UIViewController {
     @objc func luniq_viewDidAppear(_ animated: Bool) {
         self.luniq_viewDidAppear(animated)
         let name = String(describing: type(of: self))
+        LuniqSwizzleStore.currentScreen = name  // remember for $tap enrichment
         LuniqSwizzleStore.viewDidAppear?("$screen", ["screen_name": name, "source": "auto"])
     }
 }
@@ -51,6 +52,21 @@ extension UIApplication {
             ]
             if let b = control as? UIButton, let title = b.currentTitle { props["title"] = title }
             if let id = control.accessibilityIdentifier { props["id"] = id }
+            // Attach current screen so heatmaps + frustration can aggregate per screen
+            if !LuniqSwizzleStore.currentScreen.isEmpty {
+                props["screen_name"] = LuniqSwizzleStore.currentScreen
+            }
+
+            // Tap coords (screen-relative, in points) for heatmap aggregation
+            if let touch = event?.allTouches?.first {
+                let winLoc = touch.location(in: nil)
+                let screen = UIScreen.main.bounds.size
+                props["tap_x"]    = Int(winLoc.x)
+                props["tap_y"]    = Int(winLoc.y)
+                props["screen_w"] = Int(screen.width)
+                props["screen_h"] = Int(screen.height)
+            }
+
             LuniqSwizzleStore.sendAction?("$tap", props)
         }
         return result
@@ -60,4 +76,5 @@ extension UIApplication {
 enum LuniqSwizzleStore {
     static var viewDidAppear: ((String, [String: Any]) -> Void)?
     static var sendAction: ((String, [String: Any]) -> Void)?
+    static var currentScreen: String = ""
 }

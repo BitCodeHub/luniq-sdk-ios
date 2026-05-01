@@ -319,7 +319,7 @@ public extension Luniq {
 
     /// Handle a Pulse pairing URL — works for either:
     ///   - Custom scheme: `pulse-design://CODE` (or whatever your workspace scheme is)
-    ///   - Universal Link: `https://your-pulse-host.com/pair/CODE`
+    ///   - Universal Link: `https://ingest.uselunaai.com/pair/CODE`
     @discardableResult
     @objc func handleDesignModeURL(_ url: URL) -> Bool {
         let code = pairingCode(from: url)

@@ -13,18 +13,14 @@ public struct PulseSurvey: Codable {
 final class SurveyEngine {
     private let config: LuniqConfig
     private let track: (String, [String: Any]) -> Void
-    private let intelligence: () -> LuniqIntelligenceSnapshot?
     private var surveys: [PulseSurvey] = []
     private var answered: Set<String> = []
     private let defaults = UserDefaults(suiteName: "ai.luniq.sdk") ?? .standard
     private let kAnswered = "luniq.surveys.answered"
 
-    init(config: LuniqConfig,
-         track: @escaping (String, [String: Any]) -> Void,
-         intelligence: @escaping () -> LuniqIntelligenceSnapshot? = { nil }) {
+    init(config: LuniqConfig, track: @escaping (String, [String: Any]) -> Void) {
         self.config = config
         self.track = track
-        self.intelligence = intelligence
         self.answered = Set(defaults.stringArray(forKey: kAnswered) ?? [])
     }
 
@@ -56,31 +52,21 @@ final class SurveyEngine {
                     return false
                 }()
                 if !triggerHit { continue }
-                if !self.matchesAudience(s, traits: traits) { continue }
                 if !self.matchesPredictiveCohort(s) { continue }
                 self.show(s, traits: traits); return
             }
         }
     }
 
-    private func matchesAudience(_ s: PulseSurvey, traits: [String: Any]) -> Bool {
-        guard let match = s.audience["match"]?.value as? [String: Any], !match.isEmpty else { return true }
-        for (k, v) in match {
-            if "\(traits[k] ?? "")" != "\(v)" { return false }
-        }
-        return true
-    }
-
     private func matchesPredictiveCohort(_ s: PulseSurvey) -> Bool {
         guard let pc = s.audience["predictiveCohort"]?.value as? [String: Any], !pc.isEmpty else { return true }
-        guard let snap = intelligence() else { return false }
-        if let personas = pc["persona"] as? [String], !personas.isEmpty, !personas.contains(snap.persona) { return false }
-        if !inBand(snap.churnRisk,             pc["churnRisk"])             { return false }
-        if !inBand(snap.sessionScore,          pc["sessionScore"])          { return false }
-        if !inBand(snap.conversionProbability, pc["conversionProbability"]) { return false }
+        guard Luniq.shared.profile() != nil else { return false }
+        if let personas = pc["persona"] as? [String], !personas.isEmpty, !personas.contains(Luniq.shared.persona()) { return false }
+        if !inBand(Luniq.shared.predictChurn(),           pc["churnRisk"])             { return false }
+        if !inBand(Luniq.shared.sessionScore(),           pc["sessionScore"])          { return false }
+        if !inBand(Luniq.shared.conversionProbability(),  pc["conversionProbability"]) { return false }
         return true
     }
-
     private func inBand(_ value: Int, _ band: Any?) -> Bool {
         guard let b = band as? [String: Any] else { return true }
         if let mn = b["min"] as? Int, value < mn { return false }

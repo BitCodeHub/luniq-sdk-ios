@@ -4,19 +4,15 @@ final class HTTPTransport {
     private let config: LuniqConfig
     private let session: URLSession
 
-    /// Test hook. Classes here are prepended to every new transport's
-    /// `protocolClasses`. Set this from test setUp() *before* calling
-    /// `Luniq.shared.start(...)` so the resulting URLSession routes
-    /// through your `URLProtocol` mock instead of the real network.
-    /// Production code never touches this.
-    static var extraProtocolClasses: [AnyClass] = []
-
     init(config: LuniqConfig) {
         self.config = config
         let sc = URLSessionConfiguration.default
-        sc.protocolClasses = HTTPTransport.extraProtocolClasses + (sc.protocolClasses ?? [])
-        sc.timeoutIntervalForRequest = 15
-        sc.timeoutIntervalForResource = 30
+        // 8s request timeout: short enough that a hung backend doesn't keep
+        // an event batch in flight when the network is degraded, long enough
+        // to absorb normal cell/wifi latency. Resource timeout sets the
+        // hard ceiling including retries / redirects.
+        sc.timeoutIntervalForRequest = 8
+        sc.timeoutIntervalForResource = 15
         self.session = URLSession(configuration: sc)
     }
 
@@ -34,6 +30,26 @@ final class HTTPTransport {
             if let err = err { Logger.log("send failed: \(err)"); completion(false); return }
             let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
             completion((200..<300).contains(code))
+        }.resume()
+    }
+
+    /// Generic JSON POST for intelligence endpoints (experiments, personalize).
+    /// Always includes the workspace API key header so backend can resolve
+    /// workspace context. Completion returns nil on any failure.
+    func postJSON(path: String, body: [String: Any], completion: @escaping ([String: Any]?) -> Void) {
+        guard let url = URL(string: "\(config.endpoint)\(path)") else { completion(nil); return }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue(config.apiKey, forHTTPHeaderField: "X-Luniq-Key")
+        guard let data = try? JSONSerialization.data(withJSONObject: body) else { completion(nil); return }
+        req.httpBody = data
+        session.dataTask(with: req) { data, resp, err in
+            if let err = err { Logger.log("postJSON \(path) failed: \(err)"); completion(nil); return }
+            let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+            guard (200..<300).contains(code), let data = data else { completion(nil); return }
+            let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+            completion(json)
         }.resume()
     }
 }
